@@ -1,6 +1,6 @@
 # RAG-as-a-Service
 
-Мультитенантная платформа Retrieval-Augmented Generation, построенная на Go, Python, Next.js, Qdrant, PostgreSQL, MinIO, Redis, Kafka и gRPC.
+Мультитенантная платформа Retrieval-Augmented Generation, построенная на Go, Python, Next.js, Qdrant, PostgreSQL, S3-совместимом хранилище, Redis, Kafka и gRPC.
 
 ## О проекте
 
@@ -16,20 +16,27 @@ flowchart TB
     Gateway -->|gRPC| Auth[Auth Service]
     Gateway -->|gRPC| Document[Document Service]
     Gateway -->|gRPC| Retrieval[Retrieval Service]
-    Gateway -->|gRPC| LLM[LLM Router]
+    Gateway -->|HTTPS| YandexAI[Yandex AI]
 
     Auth --> PostgreSQL
     Auth --> Redis
     Document --> PostgreSQL
-    Document --> MinIO
+    Document --> Storage[S3-совместимое хранилище]
     Document --> Kafka
     Kafka --> Worker[Ingestion Worker]
-    Worker --> MinIO
+    Worker --> Storage
     Worker --> Qdrant
     Retrieval --> Qdrant
-    Retrieval --> YandexAI[Yandex AI]
-    LLM --> YandexAI
+    Retrieval --> YandexAI
 ```
+
+## Поток обработки документа
+
+1. Клиент через API Gateway и Document Service получает presigned URL и загружает файл в S3-совместимое хранилище.
+2. После подтверждения загрузки Document Service сохраняет статус документа и публикует событие в Kafka.
+3. Ingestion Worker скачивает файл, извлекает текст из PDF, TXT или DOCX, разбивает его на chunks и получает embeddings через Yandex AI.
+4. Chunks сохраняются в Qdrant вместе с `organization_id`, `document_id` и другими метаданными, а документ получает статус `indexed`.
+5. При RAG-запросе Retrieval Service выполняет tenant-aware поиск, после чего API Gateway передаёт найденный контекст в Yandex AI и возвращает ответ вместе с источниками.
 
 ## Ключевые инженерные задачи
 
